@@ -1,5 +1,6 @@
 import javax.smartcardio.*;
 import javax.xml.bind.DatatypeConverter;
+import java.lang.reflect.Array;
 import java.util.Arrays;
 import java.util.List;
 
@@ -33,6 +34,32 @@ public class SmartcardHandler {
         return DatatypeConverter.printHexBinary(connection.getATR().getBytes());
     }
 
+    private String[] selectApplication(String pse) {
+
+        String apps[] = pse.split("4F");
+        String application[][] = new String[apps.length-1][2];
+
+        for (int i = 1; i < apps.length; i++) {
+            int AIDlen = Integer.parseInt(apps[i].substring(0,2),16);
+            //System.out.println(apps[i]);
+            //System.out.println("AIDlen: " + AIDlen*2);
+            String AID = apps[i].substring(2,2+AIDlen*2);
+            //System.out.println("AID: " + AID);
+            String AIDLabel = hexToString(parseTLVbyTag(apps[i], "50"));
+            //System.out.println("Label: " + AIDLabel);
+            String[] res = {AID, AIDLabel};
+            application[i-1] = res;
+        }
+        for (String[] app:application) {
+            //System.out.println(Arrays.toString(app));
+            if (app[1].contains("Visa") || app[1].contains("Master"))
+                return app;
+        }
+        return application[0];
+
+        //return application;
+    }
+
     public void test() {
         try {
             //connection.getATR();
@@ -44,41 +71,49 @@ public class SmartcardHandler {
             String resp = sendAPDU("00A404000E315041592E5359532E4444463031");
             System.out.println(resp);
             String DFName = hexToString(parseTLVbyTag(resp, "84"));
+            System.out.println("DF Name: " + DFName);
             String SFI = intToHex(((Integer.parseInt((parseTLVbyTag(resp, "88")), 16)) << 3) | 4);
 
-            System.out.println("DF Name: " + DFName);
             System.out.println("SFI: " + SFI);
 
             // Actually get the PSE record
             resp = sendAPDU("00B201" + SFI + "00");
             System.out.println(resp);
 
-            String AID = (parseTLVbyTag(resp, "4F"));
-            System.out.println("AID: " + AID);
 
-            String AIDLabel = hexToString(parseTLVbyTag(resp, "50"));
-            System.out.println("Label: " + AIDLabel);
 
             // Select the application
+            String[] application = selectApplication(resp);
+            String AID = application[0];
+            String AIDLabel = application[1];
+            System.out.println(Arrays.toString(application));
 
             System.out.println("SND: " + "00A40400" + intToHex(AID.length()/2) + AID + "00");
             //00A4040007A0000000031010
             //00a4040007A000000003101000
             resp = sendAPDU("00A40400" + intToHex(AID.length()/2) + AID + "00");
-            //System.out.println(resp);
-            String PDOL = parseTLVbyTag(resp, "9F38");
-            //System.out.println(PDOL);
+            System.out.println(resp);
+            String PDOL = "000000";
 
             // GET PROCESSING OPTIONS request
+            if (resp.contains("9F38")) {
+                PDOL = parseTLVbyTag(resp, "9F38");
+                System.out.println("PDOL: " + PDOL);
+                resp = sendAPDU("80A800000783" + PDOL.substring(4) + "000000000000");
+            } else {
+                System.out.println("PDOL: " + PDOL);
+                resp = sendAPDU("80A8000002830000");
+            }
 
             //resp = sendAPDU("80A80000048302" + PDOL);
             //System.out.println(   "80A800000283" + PDOL.substring(4) + "000000000000");
-            resp = sendAPDU("80A800000783" + PDOL.substring(4) + "000000000000");
             //80A80000078305
             //80A80000028305
-            System.out.println(resp);
+            System.out.println("GPO RX: " + resp);
             //String AFL = parseTLVbyTag(resp, "94");
-            String[] tmpAFL = parseTLVbyTag(resp, "94").split("(?<=\\G.{8})");
+            String[] tmpAFL = {resp.substring(resp.length()-12, resp.length()-4)};
+            if (resp.contains("94"))
+                tmpAFL = parseTLVbyTag(resp, "94").split("(?<=\\G.{8})");
             String[][] AFL = new String[tmpAFL.length][4];
             for (int i = 0; i < tmpAFL.length; i++) {
                 AFL[i] = parseAFL(tmpAFL[i]);
@@ -106,20 +141,33 @@ public class SmartcardHandler {
         String SFI = intToHex(((Integer.parseInt((parseTLVbyTag(resp, "88")), 16)) << 3) | 4);
         // Actually get the PSE record
         resp = sendAPDU("00B201" + SFI + "00");
-        String AID = (parseTLVbyTag(resp, "4F"));
-        String AIDLabel = hexToString(parseTLVbyTag(resp, "50"));
         // Select the application
+        String[] application = selectApplication(resp);
+        String AID = application[0];
+        String AIDLabel = application[1];
+        // Send select command
         resp = sendAPDU("00A40400" + intToHex(AID.length()/2) + AID + "00");
-        String PDOL = parseTLVbyTag(resp, "9F38");
+        String PDOL = "000000";
+
         // GET PROCESSING OPTIONS request
-        resp = sendAPDU("80A800000783" + PDOL.substring(4) + "000000000000");
-        String[] tmpAFL = parseTLVbyTag(resp, "94").split("(?<=\\G.{8})");
+        if (resp.contains("9F38")) {
+            PDOL = parseTLVbyTag(resp, "9F38");
+            resp = sendAPDU("80A800000783" + PDOL.substring(4) + "000000000000");
+        } else {
+            resp = sendAPDU("80A8000002830000");
+        }
+
+        String[] tmpAFL = {resp.substring(resp.length()-12, resp.length()-4)};
+        if (resp.contains("94"))
+            tmpAFL = parseTLVbyTag(resp, "94").split("(?<=\\G.{8})");
         String[][] AFL = new String[tmpAFL.length][4];
         for (int i = 0; i < tmpAFL.length; i++) {
             AFL[i] = parseAFL(tmpAFL[i]);
         }
+
         // Read the first record
         resp = sendAPDU("00B2" + AFL[0][1] + AFL[0][0] + "00");
+
         String track2 = parseTLVbyTag(resp, "57");
         String cardholder = hexToString(parseTLVbyTag(resp, "5F20"));
 
@@ -154,9 +202,36 @@ public class SmartcardHandler {
     }
 
     private String parseTLVbyTag(String tlv, String tag) {
-        int index = tlv.indexOf(tag);
+        int index = 0;// = tlv.indexOf(tag);
+        String[] tlvArr = tlv.split("(?<=\\G.{2})");
+        //System.out.println(Arrays.toString(tlvArr));
+        String[] tagArr = tag.split("(?<=\\G.{2})");
+        //System.out.println(Arrays.toString(tagArr));
+
+        boolean found = false;
+        for (int i = 0; i < tlvArr.length; i++) {
+            if (tlvArr[i].equals(tagArr[0])) {
+                if (!found) index = i*2;
+                found = true;
+            }
+        }
+
+        if (tagArr.length>1) {
+            index = tlv.indexOf(tag);
+        }
+
+
+        //System.out.println(index);
+        //System.out.println(tlv);
+        //System.out.println(tlv.substring(index+tag.length(), index+tag.length()+2));
         int size = Integer.parseInt(tlv.substring(index+tag.length(), index+tag.length()+2), 16);
+        if (index > tlv.length()) {
+            System.out.println("Bad Index: got " + index);
+            System.out.println("Bad Index: " + tlv);
+            System.out.println("Bad Index: " + tag);
+        }
         return tlv.substring(index+tag.length()+2, index+tag.length()+2+(size*2));
+
 
     }
 
