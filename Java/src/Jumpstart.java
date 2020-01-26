@@ -15,9 +15,9 @@ public class Jumpstart {
             while (!handler.isCardPresent()) {}
         }
         handler.connect();
-        String[] cardInfo = handler.getCardInfo();
+        CardInfo cardInfo = handler.getCardInfo();
         handler.close();
-        System.out.println(Arrays.toString(cardInfo));
+        System.out.println(cardInfo);
     }
 
 }

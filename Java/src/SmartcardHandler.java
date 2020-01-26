@@ -99,7 +99,7 @@ public class SmartcardHandler {
         }
     }
 
-    public String[] getCardInfo() throws CardException {
+    public String[] getRawCardInfo() throws CardException {
         // Find the location of the PSE record
         String resp = sendAPDU("00A404000E315041592E5359532E4444463031");
         String DFName = hexToString(parseTLVbyTag(resp, "84"));
@@ -125,6 +125,10 @@ public class SmartcardHandler {
 
         String[] response = {DFName, AID, AIDLabel, track2, cardholder.trim()};
         return response;
+    }
+
+    public CardInfo getCardInfo() throws CardException {
+        return new CardInfo(getRawCardInfo());
     }
 
     public void close() throws CardException {
