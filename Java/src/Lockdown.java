@@ -4,7 +4,7 @@ import java.util.Arrays;
 /**
  * Created by Trey Jenkins on January 26, 2020 at 13:08
  */
-public class Jumpstart {
+public class Lockdown {
 
     public static void main(String[] args) throws CardException {
         SmartcardHandler handler = new SmartcardHandler();

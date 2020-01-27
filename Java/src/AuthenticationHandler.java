@@ -7,6 +7,7 @@ public class AuthenticationHandler {
 
     private SmartcardHandler smartcardHandler;
 
+
     public AuthenticationHandler() {
         try {
             smartcardHandler = new SmartcardHandler();
